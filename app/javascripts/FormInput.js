@@ -91,6 +91,15 @@ class FormInput extends React.Component {
             onClick={this.handleAction.bind(this, 'cancel')}
         />
       </span>
+    }else{
+      if(this.state.accounts.length > 0){
+        adminButtons = <span>
+          <RaisedButton secondary={this.showAttend()} disabled={!this.showAttend()}
+              label="Attend" style={styles}
+              onClick={this.handleAction.bind(this, 'attend')}
+          />
+        </span>
+      }
     }
 
     if(this.state.accounts.length > 0){
