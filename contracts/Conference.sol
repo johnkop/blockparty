@@ -1,91 +1,173 @@
-contract Conference {
+import './zeppelin/Rejector.sol';
+import './zeppelin/Ownable.sol';
+import './zeppelin/Killable.sol';
+
+contract Conference is Rejector, Killable {
 	string public name;
-	uint256 public balance;
+	uint256 public totalBalance;
 	uint256 public deposit;
-	uint public capacity;
+	uint public limitOfParticipants;
 	uint public registered;
 	uint public attended;
+	bool public ended;
+	uint public endedAt;
+	uint public coolingPeriod;
+
 	mapping (address => Participant) public participants;
 	mapping (uint => address) public participantsIndex;
 	bool paid;
 	uint256 _payout;
-	address owner;
 
 	struct Participant {
 		string participantName;
 		address addr;
 		bool attended;
+		uint256 payout;
+		bool paid;
 	}
 
 	event Register(string participantName, address addr, uint256 balance, uint256 value);
 	event Attend(address addr, uint256 balance);
 	event Payback(address addr, uint256 _payout, uint256 balance, bool paid);
-	event Reset(address addr, uint256 balance);
 
-	function Conference() {
+	function Conference(uint _coolingPeriod) {
 		name = 'CodeUp';
-		deposit = 1000000000000000000;		// 1 ETH = 10**18 wai
-		balance = 0;
+		deposit = 1 ether;
+		totalBalance = 0;
 		registered = 0;
 		attended = 0;
-		owner = msg.sender;
+		limitOfParticipants = 10;
+		ended = false;
+		if (_coolingPeriod != 0) {
+			coolingPeriod = _coolingPeriod;
+		} else {
+			coolingPeriod = 1 weeks;
+		}
 	}
 
-	function register(string _participant){
+	modifier sentDepositOrReturn {
+		if (msg.value == deposit) {
+			_
+		}else{
+			if(msg.sender.send(msg.value)){/* not much you can do */}
+		}
+	}
+
+	modifier onlyActive {
+		if (ended == false) {
+			_
+		}
+	}
+
+	modifier onlyActiveOrReturn {
+		if (ended == false) {
+			_
+		}else{
+			if(msg.sender.send(msg.value)){/*not much you can do*/}
+		}
+	}
+
+	modifier withinLimitOrReturn {
+		if (registered < limitOfParticipants ) {
+			_
+		}else{
+			if(msg.sender.send(msg.value)){/* not much you can do */}
+		}
+	}
+
+	function register(string _participant) sentDepositOrReturn withinLimitOrReturn onlyActiveOrReturn{
 		Register(_participant, msg.sender, msg.sender.balance, msg.value);
-		if (msg.value != deposit) throw;
-		if (isRegistered()) throw;
+		if (isRegistered(msg.sender)) throw;
 		registered++;
 		participantsIndex[registered] = msg.sender;
-		participants[msg.sender] = Participant(_participant, msg.sender, false);
-		balance = balance + (deposit * 1);
+		participants[msg.sender] = Participant(_participant, msg.sender, false, 0, false);
+		totalBalance = totalBalance + (deposit * 1);
 	}
 
-	function attend(){
-		if (isRegistered() != true) throw;
-		if (isAttended()) throw;
-		Attend(msg.sender, msg.sender.balance);
-		participants[msg.sender].attended = true;
+	function setLimitOfParticipants(uint _limitOfParticipants) {
+		limitOfParticipants = _limitOfParticipants;
+	}
+
+	function attend(address _addr) onlyOwner{
+		if (isRegistered(_addr) != true) throw;
+		if (isAttended(_addr)) throw;
+		Attend(_addr, msg.sender.balance);
+		participants[_addr].attended = true;
 		attended++;
 	}
 
-	function isRegistered() returns (bool){
-		return participants[msg.sender].addr != 0x0;
+	function isRegistered(address _addr) returns (bool){
+		return participants[_addr].addr != 0x0;
 	}
 
-	function isAttended() returns (bool){
-		return isRegistered() && participants[msg.sender].attended;
+	function isAttended(address _addr) returns (bool){
+		return isRegistered(_addr) && participants[_addr].attended;
+	}
+
+	function isPaid(address _addr) returns (bool){
+		return isRegistered(_addr) && participants[_addr].paid;
 	}
 
 	function payout() returns(uint256){
-		return balance / uint(attended);
+		return totalBalance / uint(attended);
 	}
 
-	function payback(){
-		for(uint i=1;i<=registered;i++)
-		{
+	function payback() onlyOwner{
+		for(uint i=1;i<=registered;i++){
 			if(participants[participantsIndex[i]].attended){
-				Payback(participantsIndex[i], payout(), participantsIndex[i].balance,  true);
-				participantsIndex[i].send(payout());
-			}else{
-				Payback(participantsIndex[i], payout(), participantsIndex[i].balance, false);
+				participants[participantsIndex[i]].payout = payout();
 			}
 		}
-		balance = 0;
+		ended = true;
+		endedAt = now;
 	}
 
-	function reset(){
-		Reset(owner, balance);
-		for(uint i=1;i<=registered;i++)
-		{
-			if(balance > 0){
-				participantsIndex[i].send(deposit);
-			}
-			delete participants[participantsIndex[i]];
-			delete participantsIndex[i];
+	function cancel() onlyOwner onlyActive{
+		for(uint i=1;i<=registered;i++){
+			participants[participantsIndex[i]].payout = deposit;
 		}
-		balance = 0;
-		registered = 0;
-		attended = 0;
+		ended = true;
+		endedAt = now;
+	}
+
+	modifier onlyPayable {
+		Participant participant = participants[msg.sender];
+		if (participant.payout > 0){
+			_
+		}
+	}
+
+	modifier notPaid {
+		Participant participant = participants[msg.sender];
+		if (participant.paid == false){
+			_
+		}
+	}
+
+	function withdraw() onlyPayable notPaid {
+		Participant participant = participants[msg.sender];
+		if (msg.sender.send(participant.payout)) {
+			participant.paid = true;
+			totalBalance -= participant.payout;
+		}
+	}
+
+	modifier isEnded {
+		if (ended){
+			_
+		}
+	}
+
+	modifier onlyAfter(uint _time) {
+		if (now > _time){
+			_
+		}
+	}
+
+	/* return the remaining of balance if there are any unclaimed after cooling period */
+	function clear() onlyOwner isEnded onlyAfter(endedAt + coolingPeriod) {
+		if(owner.send(totalBalance)){
+			totalBalance = 0;
+		}
 	}
 }

@@ -5,8 +5,10 @@ import Paper from 'material-ui/Paper';
 import PeopleOutlineIcon from 'material-ui/svg-icons/social/people-outline';
 import PeopleIcon from 'material-ui/svg-icons/social/people';
 import EventIcon from 'material-ui/svg-icons/action/event';
+import PlaceIcon from 'material-ui/svg-icons/maps/place';
 import IconButton from 'material-ui/IconButton';
 import Avatar from 'material-ui/Avatar';
+import math from 'mathjs';
 
 const getEtherIcon = () =>(
   <Avatar src="https://15254b2dcaab7f5478ab-24461f391e20b7336331d5789078af53.ssl.cf1.rackcdn.com/ethereum.vanillaforums.com/favicon_85d47ba50743e3c3.ico" size={26} backgroundColor="white" />
@@ -62,27 +64,13 @@ class ConferenceDetail extends React.Component {
 
   toEther(value){
     if(value){
-      return this.props.math.round(this.props.web3.fromWei(value, "ether").toNumber(), 3).toString();
+      return math.round(this.props.web3.fromWei(value, "ether").toNumber(), 3).toString();
     }
   }
 
   toNumber(value){
     if(value) return value.toNumber();
   }
-
-  youGet(){
-    if(this.state.payout && this.state.payout.toNumber() > 0){
-      return (
-        <span> (including {this.props.math.round(this.props.web3.fromWei(this.state.payout - this.state.deposit, "ether"), 3)} bonus)</span>
-      )
-    }
-  }
-
-  getContractBalance(){
-    return this.props.web3.fromWei(this.props.web3.eth.getBalance(this.props.contract.address), "ether").toNumber();
-  }
-
-
 
   getNameContent(name, contractAddress){
     if(name){
@@ -131,6 +119,13 @@ class ConferenceDetail extends React.Component {
   }
 
   render() {
+    let attendancyStatus;
+    if (this.state.ended) {
+      attendancyStatus = <p>Attended<span style={styles.list}>{this.toNumber(this.state.attended)}</span></p>
+    }else{
+      attendancyStatus = <p>Going (spots left)<span style={styles.list}>{this.toNumber(this.state.registered)}({this.toNumber(this.state.limitOfParticipants) - this.toNumber(this.state.registered)})</span></p>
+    }
+
     return (
       <Paper zDepth={1} style={styles.paperLeft}>
         <h4 style={{textAlign:'center'}}>Event Info</h4>
@@ -145,6 +140,15 @@ class ConferenceDetail extends React.Component {
               <p>Date{this.getDateContent(this.state.name)}</p>
             }
           />
+          <ListItem innerDivStyle={styles.innerDiv} leftIcon={<PlaceIcon />} disabled={true}
+            primaryText={
+              <p>Location
+                <span style={styles.list}>
+                  <a target='_blank' href='https://goo.gl/maps/HUHAKwvt2bo'>Simply Business (1 Finsbury Square, London EC2A 1AE)</a>
+                </span>
+              </p>
+            }
+          />
           <ListItem innerDivStyle={styles.innerDiv} leftIcon={getEtherIcon()} disabled={true}
             primaryText={
               <p>Deposit{this.getDepositContent(this.state.deposit, this.state.rate)}</p>
@@ -153,23 +157,11 @@ class ConferenceDetail extends React.Component {
         <Divider />
           <ListItem innerDivStyle={styles.innerDiv} leftIcon={getEtherIcon()} disabled={true}
           primaryText={
-            <p>Pot<span style={styles.list}>{this.toEther(this.state.balance)}</span></p>
-          }
-          />
-          <ListItem innerDivStyle={styles.innerDiv} leftIcon={getEtherIcon()} disabled={true}
-            primaryText={
-              <p>Payout<span style={styles.list}>{this.toEther(this.state.payout)}{this.youGet()}</span></p>
-            }
-          />
-          <ListItem innerDivStyle={styles.innerDiv} leftIcon={<PeopleOutlineIcon />} disabled={true}
-          primaryText={
-            <p>Registered<span style={styles.list}>{this.toNumber(this.state.registered)}</span></p>
+            <p>Pot<span style={styles.list}>{this.toEther(this.state.totalBalance)}</span></p>
           }
           />
           <ListItem innerDivStyle={styles.innerDiv} leftIcon={<PeopleIcon />} disabled={true}
-          primaryText={
-            <p>Attended<span style={styles.list}>{this.toNumber(this.state.attended)}</span></p>
-          }
+          primaryText={attendancyStatus}
           />
         </List>
       </Paper>
